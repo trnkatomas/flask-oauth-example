@@ -8,8 +8,8 @@ class OAuthSignIn(object):
     providers = None
 
     def __init__(self, provider_name):
-        self.provider_name = provider_name
-        credentials = current_app.config['OAUTH_CREDENTIALS'][provider_name]
+        self.provider_name = "facebook" #provider_name
+        credentials = current_app.config['OAUTH_CREDENTIALS'][self.provider_name]
         self.consumer_id = credentials['id']
         self.consumer_secret = credentials['secret']
 
@@ -64,46 +64,13 @@ class FacebookSignIn(OAuthSignIn):
                   'redirect_uri': self.get_callback_url()},
             decoder=decode_json
         )
-        me = oauth_session.get('me?fields=id,email').json()
+        me = oauth_session.get('me?fields=id,email,likes,friends').json()
         return (
             'facebook$' + me['id'],
             me.get('email').split('@')[0],  # Facebook does not provide
                                             # username, so the email's user
                                             # is used instead
-            me.get('email')
+            me.get('email'),
+            me.get('likes')
         )
 
-
-class TwitterSignIn(OAuthSignIn):
-    def __init__(self):
-        super(TwitterSignIn, self).__init__('twitter')
-        self.service = OAuth1Service(
-            name='twitter',
-            consumer_key=self.consumer_id,
-            consumer_secret=self.consumer_secret,
-            request_token_url='https://api.twitter.com/oauth/request_token',
-            authorize_url='https://api.twitter.com/oauth/authorize',
-            access_token_url='https://api.twitter.com/oauth/access_token',
-            base_url='https://api.twitter.com/1.1/'
-        )
-
-    def authorize(self):
-        request_token = self.service.get_request_token(
-            params={'oauth_callback': self.get_callback_url()}
-        )
-        session['request_token'] = request_token
-        return redirect(self.service.get_authorize_url(request_token[0]))
-
-    def callback(self):
-        request_token = session.pop('request_token')
-        if 'oauth_verifier' not in request.args:
-            return None, None, None
-        oauth_session = self.service.get_auth_session(
-            request_token[0],
-            request_token[1],
-            data={'oauth_verifier': request.args['oauth_verifier']}
-        )
-        me = oauth_session.get('account/verify_credentials.json').json()
-        social_id = 'twitter$' + str(me.get('id'))
-        username = me.get('screen_name')
-        return social_id, username, None   # Twitter does not provide email

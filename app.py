@@ -4,18 +4,17 @@ from flask_login import LoginManager, UserMixin, login_user, logout_user,\
     current_user
 from oauth import OAuthSignIn
 
+import random
+import os, json
+
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'top secret!'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///db.sqlite'
 app.config['OAUTH_CREDENTIALS'] = {
     'facebook': {
-        'id': '470154729788964',
-        'secret': '010cc08bd4f51e34f3f3e684fbdea8a7'
-    },
-    'twitter': {
-        'id': '3RzWQclolxWZIMq5LJqzRZPTl',
-        'secret': 'm9TEd58DSEtRrZHpz2EjrV9AhsBRxKMo8m3kuIZj3zLwzwIimt'
+        'id': os.environ.get("app_id"),
+        'secret': os.environ.get('app_secret')
     }
 }
 
@@ -23,6 +22,7 @@ db = SQLAlchemy(app)
 lm = LoginManager(app)
 lm.login_view = 'index'
 
+jokes = open("jokes.txt","r").read().split('\n\n')
 
 class User(UserMixin, db.Model):
     __tablename__ = 'users'
@@ -30,7 +30,7 @@ class User(UserMixin, db.Model):
     social_id = db.Column(db.String(64), nullable=False, unique=True)
     nickname = db.Column(db.String(64), nullable=False)
     email = db.Column(db.String(64), nullable=True)
-
+    likes = db.Column(db.String(2048), nullable=True)
 
 @lm.user_loader
 def load_user(id):
@@ -39,7 +39,7 @@ def load_user(id):
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    return render_template('index.html', joke=random.choice(jokes))
 
 
 @app.route('/logout')
@@ -61,15 +61,21 @@ def oauth_callback(provider):
     if not current_user.is_anonymous:
         return redirect(url_for('index'))
     oauth = OAuthSignIn.get_provider(provider)
-    social_id, username, email = oauth.callback()
+    social_id, username, email, likes = oauth.callback()
+    print(likes)
     if social_id is None:
         flash('Authentication failed.')
         return redirect(url_for('index'))
     user = User.query.filter_by(social_id=social_id).first()
     if not user:
-        user = User(social_id=social_id, nickname=username, email=email)
+        user = User(social_id=social_id, nickname=username, email=email, likes=json.dumps(likes))
         db.session.add(user)
         db.session.commit()
+    if user:
+        if user.likes != likes:
+            user.likes=json.dumps(likes)
+            db.session.merge(user)
+            db.session.commit()            
     login_user(user, True)
     return redirect(url_for('index'))
 
